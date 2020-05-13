@@ -25,7 +25,7 @@ class CarInterface(CarInterfaceBase):
     # was never released
     ret.enableCamera = True
 
-    ret.steerRateCost = 1
+    ret.steerRateCost = 1.3
     ret.steerLimitTimer = 0.4
 
     if candidate in [CAR.IMPREZA]:
