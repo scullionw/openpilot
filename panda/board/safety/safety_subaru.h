@@ -1,10 +1,10 @@
 const int SUBARU_MAX_STEER = 2047; // 1s
 // real time torque limit to prevent controls spamming
 // the real time limit is 1500/sec
-const int SUBARU_MAX_RT_DELTA = 940;          // max delta torque allowed for real time checks
+const int SUBARU_MAX_RT_DELTA = 9400;          // max delta torque allowed for real time checks
 const uint32_t SUBARU_RT_INTERVAL = 250000;    // 250ms between real time checks
-const int SUBARU_MAX_RATE_UP = 50;
-const int SUBARU_MAX_RATE_DOWN = 70;
+const int SUBARU_MAX_RATE_UP = 100;
+const int SUBARU_MAX_RATE_DOWN = 100;
 const int SUBARU_DRIVER_TORQUE_ALLOWANCE = 60;
 const int SUBARU_DRIVER_TORQUE_FACTOR = 10;
 const int SUBARU_STANDSTILL_THRSLD = 20;  // about 1kph
