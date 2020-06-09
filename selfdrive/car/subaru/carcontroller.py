@@ -50,9 +50,7 @@ class CarController():
       apply_steer = apply_std_steer_torque_limits(new_steer, self.apply_steer_last, CS.out.steeringTorque, P)
       self.steer_rate_limited = new_steer != apply_steer
 
-      lkas_enabled = enabled
-
-      if not lkas_enabled:
+      if not enabled or CS.out.steerWarning:
         apply_steer = 0
 
       can_sends.append(subarucan.create_steering_control(self.packer, apply_steer, frame, P.STEER_STEP))
