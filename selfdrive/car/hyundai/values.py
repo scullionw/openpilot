@@ -1,3 +1,5 @@
+# flake8: noqa
+
 from cereal import car
 from selfdrive.car import dbc_dict
 Ecu = car.CarParams.Ecu
@@ -150,7 +152,7 @@ CHECKSUM = {
 FEATURES = {
   "use_cluster_gears": [CAR.ELANTRA, CAR.KONA, CAR.ELANTRA_GT_I30],     # Use Cluster for Gear Selection, rather than Transmission
   "use_tcu_gears": [CAR.KIA_OPTIMA, CAR.SONATA_2019],                                    # Use TCU Message for Gear Selection
-  "use_elect_gears": [CAR.KIA_OPTIMA_H, CAR.KONA_EV], # Use TCU Message for Gear Selection
+  "use_elect_gears": [CAR.KIA_OPTIMA_H, CAR.KONA_EV],  # Use TCU Message for Gear Selection
 }
 
 DBC = {

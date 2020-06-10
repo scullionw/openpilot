@@ -20,7 +20,7 @@ class CarControllerParams():
     self.STEER_DRIVER_ALLOWANCE = 50   # allowed driver torque before start limiting
     self.STEER_DRIVER_MULTIPLIER = 4   # weight driver torque heavily
     self.STEER_DRIVER_FACTOR = 100     # from dbc
-    self.NEAR_STOP_BRAKE_PHASE = 0.5 # m/s, more aggressive braking near full stop
+    self.NEAR_STOP_BRAKE_PHASE = 0.5  # m/s, more aggressive braking near full stop
 
     # Takes case of "Service Adaptive Cruise" and "Service Front Camera"
     # dashboard messages.
@@ -38,24 +38,8 @@ class CarControllerParams():
     self.BRAKE_LOOKUP_V = [MAX_BRAKE, 0]
 
 
-def actuator_hystereses(final_pedal, pedal_steady):
-  # hyst params... TODO: move these to VehicleParams
-  pedal_hyst_gap = 0.01    # don't change pedal command for small oscillations within this value
-
-  # for small pedal oscillations within pedal_hyst_gap, don't change the pedal command
-  if final_pedal == 0.:
-    pedal_steady = 0.
-  elif final_pedal > pedal_steady + pedal_hyst_gap:
-    pedal_steady = final_pedal - pedal_hyst_gap
-  elif final_pedal < pedal_steady - pedal_hyst_gap:
-    pedal_steady = final_pedal + pedal_hyst_gap
-  final_pedal = pedal_steady
-
-  return final_pedal, pedal_steady
-
 class CarController():
   def __init__(self, dbc_name, CP, VM):
-    self.pedal_steady = 0.
     self.start_time = 0.
     self.apply_steer_last = 0
     self.lka_icon_status_last = (False, False)
@@ -67,7 +51,7 @@ class CarController():
     self.packer_pt = CANPacker(DBC[CP.carFingerprint]['pt'])
     self.packer_ch = CANPacker(DBC[CP.carFingerprint]['chassis'])
 
-  def update(self, enabled, CS, frame, actuators, \
+  def update(self, enabled, CS, frame, actuators,
              hud_v_cruise, hud_show_lanes, hud_show_car, hud_alert):
 
     P = self.params
@@ -79,8 +63,7 @@ class CarController():
     if hud_alert == VisualAlert.fcw:
       self.fcw_frames = 100
 
-    ### STEER ###
-
+    # STEER
     if (frame % P.STEER_STEP) == 0:
       lkas_enabled = enabled and not CS.out.steerWarning and CS.out.vEgo > P.MIN_STEER_SPEED
       if lkas_enabled:
@@ -93,18 +76,12 @@ class CarController():
       self.apply_steer_last = apply_steer
       idx = (frame // P.STEER_STEP) % 4
 
-      can_sends.append(gmcan.create_steering_control(self.packer_pt,
-        CanBus.POWERTRAIN, apply_steer, idx, lkas_enabled))
+      can_sends.append(gmcan.create_steering_control(self.packer_pt, CanBus.POWERTRAIN, apply_steer, idx, lkas_enabled))
 
-    ### GAS/BRAKE ###
-
+    # GAS/BRAKE
     # no output if not enabled, but keep sending keepalive messages
     # treat pedals as one
     final_pedal = actuators.gas - actuators.brake
-
-    # *** apply pedal hysteresis ***
-    final_brake, self.brake_steady = actuator_hystereses(
-      final_pedal, self.pedal_steady)
 
     if not enabled:
       # Stock ECU sends max regen when not enabled.
