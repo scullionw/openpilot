@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <assert.h>
 #include <sys/mman.h>
+#include <string>
+#include <sstream>
 #include <sys/resource.h>
 #include <czmq.h>
 #include "common/util.h"
@@ -12,6 +14,7 @@
 #include "common/touch.h"
 #include "common/visionimg.h"
 #include "common/params.h"
+#include "common/utilpp.h"
 #include "ui.hpp"
 
 static int last_brightness = -1;
@@ -135,61 +138,40 @@ static void set_do_exit(int sig) {
   do_exit = 1;
 }
 
-static void read_param_bool(bool* param, const char* param_name, bool persistent_param = false) {
-  char *s;
-  const int result = read_db_value(param_name, &s, NULL, persistent_param);
-  if (result == 0) {
-    *param = s[0] == '1';
-    free(s);
-  }
-}
+template <class T>
+static int read_param(T* param, const char *param_name, bool persistent_param = false){
+  T param_orig = *param;
+  char *value;
+  size_t sz;
 
-static int read_param_float(float* param, const char* param_name, bool persistent_param = false) {
-  char *s;
-  const int result = read_db_value(param_name, &s, NULL, persistent_param);
-  if (result == 0) {
-    *param = strtod(s, NULL);
-    free(s);
+  int result = read_db_value(param_name, &value, &sz, persistent_param);
+  if (result == 0){
+    std::string s = std::string(value, sz); // value is not null terminated
+    free(value);
+
+    // Parse result
+    std::istringstream iss(s);
+    iss >> *param;
+
+    // Restore original value if parsing failed
+    if (iss.fail()) {
+      *param = param_orig;
+      result = -1;
+    }
   }
   return result;
 }
 
-static int read_param_uint64(uint64_t* dest, const char* param_name, bool persistent_param = false) {
-  char *s;
-  const int result = read_db_value(param_name, &s, NULL, persistent_param);
-  if (result == 0) {
-    *dest = strtoull(s, NULL, 0);
-    free(s);
+template <class T>
+static int read_param_timeout(T* param, const char* param_name, int* timeout, bool persistent_param = false) {
+  int result = -1;
+  if (*timeout > 0){
+    (*timeout)--;
+  } else {
+    *timeout = 2 * UI_FREQ; // 0.5Hz
+    result = read_param(param, param_name, persistent_param);
   }
   return result;
-}
-
-static void read_param_bool_timeout(bool* param, const char* param_name, int* timeout, bool persistent_param = false) {
-  if (*timeout > 0){
-    (*timeout)--;
-  } else {
-    read_param_bool(param, param_name, persistent_param);
-    *timeout = 2 * UI_FREQ; // 0.5Hz
-  }
-}
-
-static void read_param_float_timeout(float* param, const char* param_name, int* timeout, bool persistent_param = false) {
-  if (*timeout > 0){
-    (*timeout)--;
-  } else {
-    read_param_float(param, param_name, persistent_param);
-    *timeout = 2 * UI_FREQ; // 0.5Hz
-  }
-}
-
-static int read_param_uint64_timeout(uint64_t* dest, const char* param_name, int* timeout, bool persistent_param = false) {
-  if (*timeout > 0){
-    (*timeout)--;
-    return -1;
-  } else {
-    *timeout = 2 * UI_FREQ; // 0.5Hz
-    return read_param_uint64(dest, param_name, persistent_param);
-  }
 }
 
 static int write_param_float(float param, const char* param_name, bool persistent_param = false) {
@@ -226,9 +208,6 @@ static void ui_init(UIState *s) {
 
   set_awake(s, true);
 
-  s->model_changed = false;
-  s->livempc_or_radarstate_changed = false;
-
   ui_nvg_init(s);
 }
 
@@ -247,18 +226,16 @@ static void ui_init_vision(UIState *s, const VisionStreamBufs back_bufs,
   s->cur_vision_idx = -1;
   s->cur_vision_front_idx = -1;
 
-  s->scene = (UIScene){
-      .frontview = getenv("FRONTVIEW") != NULL,
-      .fullview = getenv("FULLVIEW") != NULL,
-      .transformed_width = ui_info.transformed_width,
-      .transformed_height = ui_info.transformed_height,
-      .front_box_x = ui_info.front_box_x,
-      .front_box_y = ui_info.front_box_y,
-      .front_box_width = ui_info.front_box_width,
-      .front_box_height = ui_info.front_box_height,
-      .world_objects_visible = false,  // Invisible until we receive a calibration message.
-      .gps_planner_active = false,
-  };
+  s->scene.frontview = getenv("FRONTVIEW") != NULL;
+  s->scene.fullview = getenv("FULLVIEW") != NULL;
+  s->scene.transformed_width = ui_info.transformed_width;
+  s->scene.transformed_height = ui_info.transformed_height;
+  s->scene.front_box_x = ui_info.front_box_x;
+  s->scene.front_box_y = ui_info.front_box_y;
+  s->scene.front_box_width = ui_info.front_box_width;
+  s->scene.front_box_height = ui_info.front_box_height;
+  s->scene.world_objects_visible = false;  // Invisible until we receive a calibration message.
+  s->scene.gps_planner_active = false;
 
   s->rgb_width = back_bufs.width;
   s->rgb_height = back_bufs.height;
@@ -277,10 +254,10 @@ static void ui_init_vision(UIState *s, const VisionStreamBufs back_bufs,
     0.0f, 0.0f, 0.0f, 1.0f,
   }};
 
-  read_param_float(&s->speed_lim_off, "SpeedLimitOffset");
-  read_param_bool(&s->is_metric, "IsMetric");
-  read_param_bool(&s->longitudinal_control, "LongitudinalControl");
-  read_param_bool(&s->limit_set_speed, "LimitSetSpeed");
+  read_param(&s->speed_lim_off, "SpeedLimitOffset");
+  read_param(&s->is_metric, "IsMetric");
+  read_param(&s->longitudinal_control, "LongitudinalControl");
+  read_param(&s->limit_set_speed, "LimitSetSpeed");
 
   // Set offsets so params don't get read at the same time
   s->longitudinal_control_timeout = UI_FREQ / 3;
@@ -303,6 +280,8 @@ static void read_path(PathData& p, const cereal::ModelData::PathData::Reader &pa
   for (int i = 0; i < MODEL_PATH_DISTANCE; i++) {
     p.points[i] = p.poly[0] * (i*i*i) + p.poly[1] * (i*i)+ p.poly[2] * i + p.poly[3];
   }
+
+  p.validLen = pathp.getValidLen();
 }
 
 static void read_model(ModelData &d, const cereal::ModelData::Reader &model) {
@@ -326,23 +305,12 @@ void handle_message(UIState *s, SubMaster &sm) {
   UIScene &scene = s->scene;
   if (s->started && sm.updated("controlsState")) {
     auto event = sm["controlsState"];
-    auto data = event.getControlsState();
+    scene.controls_state = event.getControlsState();
     s->controls_timeout = 1 * UI_FREQ;
-    scene.frontview = data.getRearViewCam();
+    scene.frontview = scene.controls_state.getRearViewCam();
     if (!scene.frontview){ s->controls_seen = true; }
 
-    if (data.getVCruise() != scene.v_cruise) {
-      scene.v_cruise_update_ts = event.getLogMonoTime();
-    }
-    scene.v_cruise = data.getVCruise();
-    scene.v_ego = data.getVEgo();
-    scene.curvature = data.getCurvature();
-    scene.engaged = data.getEnabled();
-    scene.engageable = data.getEngageable();
-    scene.gps_planner_active = data.getGpsPlannerActive();
-    scene.monitoring_active = data.getDriverMonitoringOn();
-    scene.decel_for_model = data.getDecelForModel();
-    auto alert_sound = data.getAlertSound();
+    auto alert_sound = scene.controls_state.getAlertSound();
     const auto sound_none = cereal::CarControl::HUDControl::AudibleAlert::NONE;
     if (alert_sound != s->alert_sound){
       if (s->alert_sound != sound_none){
@@ -350,34 +318,33 @@ void handle_message(UIState *s, SubMaster &sm) {
       }
       if (alert_sound != sound_none){
         play_alert_sound(alert_sound);
-        s->alert_type = data.getAlertType();
+        s->alert_type = scene.controls_state.getAlertType();
       }
       s->alert_sound = alert_sound;
     }
-    scene.alert_text1 = data.getAlertText1();
-    scene.alert_text2 = data.getAlertText2();
-    scene.alert_ts = event.getLogMonoTime();
-    scene.alert_size = data.getAlertSize();
-    auto alertStatus = data.getAlertStatus();
+    scene.alert_text1 = scene.controls_state.getAlertText1();
+    scene.alert_text2 = scene.controls_state.getAlertText2();
+    scene.alert_size = scene.controls_state.getAlertSize();
+    auto alertStatus = scene.controls_state.getAlertStatus();
     if (alertStatus == cereal::ControlsState::AlertStatus::USER_PROMPT) {
       update_status(s, STATUS_WARNING);
     } else if (alertStatus == cereal::ControlsState::AlertStatus::CRITICAL) {
       update_status(s, STATUS_ALERT);
     } else{
-      update_status(s, scene.engaged ? STATUS_ENGAGED : STATUS_DISENGAGED);
+      update_status(s, scene.controls_state.getEnabled() ? STATUS_ENGAGED : STATUS_DISENGAGED);
     }
 
-    scene.alert_blinkingrate = data.getAlertBlinkingRate();
-    if (scene.alert_blinkingrate > 0.) {
+    float alert_blinkingrate = scene.controls_state.getAlertBlinkingRate();
+    if (alert_blinkingrate > 0.) {
       if (s->alert_blinked) {
         if (s->alert_blinking_alpha > 0.0 && s->alert_blinking_alpha < 1.0) {
-          s->alert_blinking_alpha += (0.05*scene.alert_blinkingrate);
+          s->alert_blinking_alpha += (0.05*alert_blinkingrate);
         } else {
           s->alert_blinked = false;
         }
       } else {
         if (s->alert_blinking_alpha > 0.25) {
-          s->alert_blinking_alpha -= (0.05*scene.alert_blinkingrate);
+          s->alert_blinking_alpha -= (0.05*alert_blinkingrate);
         } else {
           s->alert_blinking_alpha += 0.25;
           s->alert_blinked = true;
@@ -387,18 +354,8 @@ void handle_message(UIState *s, SubMaster &sm) {
   }
   if (sm.updated("radarState")) {
     auto data = sm["radarState"].getRadarState();
-
-    auto leaddatad = data.getLeadOne();
-    scene.lead_status = leaddatad.getStatus();
-    scene.lead_d_rel = leaddatad.getDRel();
-    scene.lead_y_rel = leaddatad.getYRel();
-    scene.lead_v_rel = leaddatad.getVRel();
-    auto leaddatad2 = data.getLeadTwo();
-    scene.lead_status2 = leaddatad2.getStatus();
-    scene.lead_d_rel2 = leaddatad2.getDRel();
-    scene.lead_y_rel2 = leaddatad2.getYRel();
-    scene.lead_v_rel2 = leaddatad2.getVRel();
-    s->livempc_or_radarstate_changed = true;
+    scene.lead_data[0] = data.getLeadOne();
+    scene.lead_data[1] = data.getLeadTwo();
   }
   if (sm.updated("liveCalibration")) {
     scene.world_objects_visible = true;
@@ -409,7 +366,6 @@ void handle_message(UIState *s, SubMaster &sm) {
   }
   if (sm.updated("model")) {
     read_model(scene.model, sm["model"].getModel());
-    s->model_changed = true;
   }
   // else if (which == cereal::Event::LIVE_MPC) {
   //   auto data = event.getLiveMpc();
@@ -425,9 +381,6 @@ void handle_message(UIState *s, SubMaster &sm) {
     auto data = sm["uiLayoutState"].getUiLayoutState();
     s->active_app = data.getActiveApp();
     scene.uilayout_sidebarcollapsed = data.getSidebarCollapsed();
-    if (data.getMockEngaged() != scene.uilayout_mockengaged) {
-      scene.uilayout_mockengaged = data.getMockEngaged();
-    }
   }
 #ifdef SHOW_SPEEDLIMIT
   if (sm.updated("liveMapData")) {
@@ -435,16 +388,7 @@ void handle_message(UIState *s, SubMaster &sm) {
   }
 #endif
   if (sm.updated("thermal")) {
-    auto data = sm["thermal"].getThermal();
-    scene.networkType = data.getNetworkType();
-    scene.networkStrength = data.getNetworkStrength();
-    scene.batteryPercent = data.getBatteryPercent();
-    scene.batteryCharging = data.getBatteryStatus() == "Charging";
-    scene.freeSpace = data.getFreeSpace();
-    scene.thermalStatus = data.getThermalStatus();
-    scene.paTemp = data.getPa0();
-
-    s->thermal_started = data.getStarted();
+    scene.thermal = sm["thermal"].getThermal();
   }
   if (sm.updated("ubloxGnss")) {
     auto data = sm["ubloxGnss"].getUbloxGnss();
@@ -457,20 +401,15 @@ void handle_message(UIState *s, SubMaster &sm) {
     s->hardware_timeout = 5*30; // 5 seconds at 30 fps
   }
   if (sm.updated("driverState")) {
-    auto data = sm["driverState"].getDriverState();
-    scene.face_prob = data.getFaceProb();
-    auto fxy_list = data.getFacePosition();
-    scene.face_x = fxy_list[0];
-    scene.face_y = fxy_list[1];
+    scene.driver_state = sm["driverState"].getDriverState();
   }
   if (sm.updated("dMonitoringState")) {
     auto data = sm["dMonitoringState"].getDMonitoringState();
     scene.is_rhd = data.getIsRHD();
-    scene.awareness_status = data.getAwarenessStatus();
     s->preview_started = data.getIsPreview();
   }
 
-  s->started = s->thermal_started || s->preview_started ;
+  s->started = scene.thermal.getStarted() || s->preview_started ;
   // Handle onroad/offroad transition
   if (!s->started) {
     if (s->status != STATUS_STOPPED) {
@@ -490,9 +429,7 @@ void handle_message(UIState *s, SubMaster &sm) {
 }
 
 static void check_messages(UIState *s) {
-  while (true) {
-    if (s->sm->update(0) == 0)
-      break;
+  if (s->sm->update(0) > 0){
     handle_message(s, *(s->sm));
   }
 }
@@ -780,22 +717,6 @@ fail:
 
 #endif
 
-int is_leon() {
-  #define MAXCHAR 1000
-  FILE *fp;
-  char str[MAXCHAR];
-  const char* filename = "/proc/cmdline";
-
-  fp = fopen(filename, "r");
-  if (fp == NULL){
-    printf("Could not open file %s",filename);
-    return 0;
-  }
-  fgets(str, MAXCHAR, fp);
-  fclose(fp);
-  return strstr(str, "letv") != NULL;
-}
-
 int main(int argc, char* argv[]) {
   int err;
   setpriority(PRIO_PROCESS, 0, -14);
@@ -826,11 +747,11 @@ int main(int argc, char* argv[]) {
   ui_sound_init();
 
   // light sensor scaling params
-  const int LEON = is_leon();
+  const bool LEON = util::read_file("/proc/cmdline").find("letv") != std::string::npos;
 
   float brightness_b, brightness_m;
-  int result = read_param_float(&brightness_b, "BRIGHTNESS_B", true);
-  result += read_param_float(&brightness_m, "BRIGHTNESS_M", true);
+  int result = read_param(&brightness_b, "BRIGHTNESS_B", true);
+  result += read_param(&brightness_m, "BRIGHTNESS_M", true);
 
   if(result != 0){
     brightness_b = LEON ? 10.0 : 5.0;
@@ -930,7 +851,7 @@ int main(int argc, char* argv[]) {
     if (s->volume_timeout > 0) {
       s->volume_timeout--;
     } else {
-      int volume = fmin(MAX_VOLUME, MIN_VOLUME + s->scene.v_ego / 5);  // up one notch every 5 m/s
+      int volume = fmin(MAX_VOLUME, MIN_VOLUME + s->scene.controls_state.getVEgo() / 5);  // up one notch every 5 m/s
       set_volume(volume);
       s->volume_timeout = 5 * UI_FREQ;
     }
@@ -965,11 +886,11 @@ int main(int argc, char* argv[]) {
       s->alert_sound = cereal::CarControl::HUDControl::AudibleAlert::NONE;
     }
 
-    read_param_bool_timeout(&s->is_metric, "IsMetric", &s->is_metric_timeout);
-    read_param_bool_timeout(&s->longitudinal_control, "LongitudinalControl", &s->longitudinal_control_timeout);
-    read_param_bool_timeout(&s->limit_set_speed, "LimitSetSpeed", &s->limit_set_speed_timeout);
-    read_param_float_timeout(&s->speed_lim_off, "SpeedLimitOffset", &s->limit_set_speed_timeout);
-    int param_read = read_param_uint64_timeout(&s->last_athena_ping, "LastAthenaPingTime", &s->last_athena_ping_timeout);
+    read_param_timeout(&s->is_metric, "IsMetric", &s->is_metric_timeout);
+    read_param_timeout(&s->longitudinal_control, "LongitudinalControl", &s->longitudinal_control_timeout);
+    read_param_timeout(&s->limit_set_speed, "LimitSetSpeed", &s->limit_set_speed_timeout);
+    read_param_timeout(&s->speed_lim_off, "SpeedLimitOffset", &s->limit_set_speed_timeout);
+    int param_read = read_param_timeout(&s->last_athena_ping, "LastAthenaPingTime", &s->last_athena_ping_timeout);
     if (param_read != -1) { // Param was updated this loop
       if (param_read != 0) { // Failed to read param
         s->scene.athenaStatus = NET_DISCONNECTED;
