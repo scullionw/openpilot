@@ -6,7 +6,7 @@ from opendbc.can.packer import CANPacker
 
 class CarControllerParams():
   def __init__(self):
-    self.STEER_MAX = 2047              # max_steer 4095
+    self.STEER_MAX = 1439              # max_steer 4095
     self.STEER_STEP = 2                # how often we update the steer cmd
     self.STEER_DELTA_UP = 50           # torque increase per refresh, 0.8s to max
     self.STEER_DELTA_DOWN = 70         # torque decrease per refresh
@@ -42,7 +42,7 @@ class CarController():
       apply_steer = apply_std_steer_torque_limits(new_steer, self.apply_steer_last, CS.out.steeringTorque, self.params)
       self.steer_rate_limited = new_steer != apply_steer
 
-      if not enabled:
+      if not enabled or CS.out.steerWarning:
         apply_steer = 0
 
       if CS.CP.carFingerprint in PREGLOBAL_CARS:
