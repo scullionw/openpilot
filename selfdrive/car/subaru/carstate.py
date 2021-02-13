@@ -66,6 +66,10 @@ class CarState(CarStateBase):
                         cp.vl["BodyInfo"]['DOOR_OPEN_FR'],
                         cp.vl["BodyInfo"]['DOOR_OPEN_FL']])
 
+    #----------------TRICK NON-EPB-------------------
+    self.brake_pedal_msg = copy.copy(cp.vl["Brake_Pedal"])
+    #------------------------------------------------
+
     if self.car_fingerprint in PREGLOBAL_CARS:
       ret.steerError = cp.vl["Steering_Torque"]["LKA_Lockout"] == 1
       self.button = cp_cam.vl["ES_CruiseThrottle"]["Button"]
@@ -77,6 +81,10 @@ class CarState(CarStateBase):
       ret.cruiseState.nonAdaptive = cp_cam.vl["ES_DashStatus"]['Conventional_Cruise'] == 1
       self.es_distance_msg = copy.copy(cp_cam.vl["ES_Distance"])
       self.es_lkas_msg = copy.copy(cp_cam.vl["ES_LKAS_State"])
+      self.throttle_msg = copy.copy(cp.vl["Throttle"])
+      self.close_distance = cp_cam.vl["ES_Distance"]['Close_Distance']
+      self.car_follow = cp_cam.vl["ES_Distance"]['Car_Follow']
+      self.cruise_state = cp_cam.vl["ES_DashStatus"]['Cruise_State']
 
     return ret
 
@@ -91,6 +99,17 @@ class CarState(CarStateBase):
       ("Cruise_On", "CruiseControl", 0),
       ("Cruise_Activated", "CruiseControl", 0),
       ("Brake_Pedal", "Brake_Pedal", 0),
+      #----------------TRICK NON-EPB-------------------
+      #Tagging all message parts so it can be sent without upseting ES
+      ("Checksum", "Brake_Pedal", 0),
+      ("Counter", "Brake_Pedal", 0),
+      ("Signal1", "Brake_Pedal", 0),
+      ("Speed", "Brake_Pedal", 0),
+      ("Signal2", "Brake_Pedal", 0),
+      ("Brake_Lights", "Brake_Pedal", 0),
+      ("Signal3", "Brake_Pedal", 0),
+      ("Signal4", "Brake_Pedal", 0),
+      #------------------------------------------------
       ("Throttle_Pedal", "Throttle", 0),
       ("LEFT_BLINKER", "Dashlights", 0),
       ("RIGHT_BLINKER", "Dashlights", 0),
@@ -120,6 +139,19 @@ class CarState(CarStateBase):
       ("Transmission", 100),
       ("Steering_Torque", 50),
     ]
+
+    signals += [
+        ("Checksum", "Throttle", 0),
+        ("Counter", "Throttle", 0),
+        ("SPARE_SIGNAL_1", "Throttle", 0),
+        ("Engine_RPM", "Throttle", 0),
+        ("SPARE_SIGNAL_2", "Throttle", 0),
+        ("Throttle_Pedal", "Throttle", 0),
+        ("Throttle_Cruise", "Throttle", 0),
+        ("Throttle_Combo", "Throttle", 0),
+        ("Signal1", "Throttle", 0),
+        ("Off_Accel", "Throttle", 0),
+      ]
 
     if CP.carFingerprint in PREGLOBAL_CARS:
       signals += [
@@ -222,6 +254,10 @@ class CarState(CarStateBase):
         ("LKAS_Right_Line_Green", "ES_LKAS_State", 0),
         ("LKAS_Alert", "ES_LKAS_State", 0),
         ("Signal3", "ES_LKAS_State", 0),
+         #---------Subaru STOP AND GO---------
+        #Add signal Cruise_State to determine if car is in HOLD state
+        ("Cruise_State", "ES_DashStatus", 0),
+        #------------------------------------
       ]
 
       checks = [
